@@ -28,7 +28,7 @@ To run the program:
    ```bash
    python3 dynamic_chessboard_finder.py
    ```
-2. Press the "ç" key (configurable in `dynamic_chessboard_finder.py` on line 29) to open the analysis tool with the detected chessboard from your screen.
+2. Press the "ç" key (configurable in `dynamic_chessboard_finder.py` on line 29) to open the trainer tool and then the analysis tool with the detected chessboard from your screen.
 
 ### Dependencies
 
