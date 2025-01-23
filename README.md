@@ -30,6 +30,8 @@ To run the program:
    ```
 2. Press the "ç" key (configurable in `dynamic_chessboard_finder.py` on line 29) to open the trainer tool and then the analysis tool with the detected chessboard from your screen.
 
+   I couldn't upload the pre-trained fen generation weights so first it is required to train the CNN.
+
 ### Dependencies
 
 - Ensure all required Python libraries are installed.
