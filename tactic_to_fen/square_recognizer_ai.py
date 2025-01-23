@@ -123,7 +123,7 @@ def train_model_default():
     model = ChessPieceCNN().to(device)
     # Load the dataset
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    dataset = datasets.ImageFolder(root=os.path.join(current_dir,'data', transform=transform))
+    dataset = datasets.ImageFolder(root=os.path.join(current_dir,'data'), transform=transform)
     # Split the dataset into training and validation sets
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size
