@@ -47,6 +47,18 @@ def get_small_piece_image(piece):
     image = image.resize((int(SQUARE_SIZE//2), int(SQUARE_SIZE//2)), Image.LANCZOS)
     return pygame.image.fromstring(image.tobytes(), image.size, image.mode)
 
+def set_castling(game):
+    if game.piece_at(chess.E1) == chess.Piece.from_symbol("K"):
+        if game.piece_at(chess.H1) == chess.Piece.from_symbol("R"):
+            game.castling_rights |= chess.BB_H1
+        if game.piece_at(chess.A1) == chess.Piece.from_symbol("R"):
+            game.castling_rights |= chess.BB_A1
+    if game.piece_at(chess.E8) == chess.Piece.from_symbol("k"):
+        if game.piece_at(chess.H8) == chess.Piece.from_symbol("r"):
+            game.castling_rights |= chess.BB_H8
+        if game.piece_at(chess.A8) == chess.Piece.from_symbol("r"):
+            game.castling_rights |= chess.BB_A8
+
 def draw_board(screen, selected_square, game, flipped_board):
     colors = [WHITE, BLACK]
     for row in range(BOARD_SIZE):
@@ -123,8 +135,8 @@ def draw_editing_tab(screen, editing_position):
 
     pieces = ['r', 'n', 'b', 'q', 'k', 'p', 'R', 'N', 'B', 'Q', 'K', 'P']
     for i, piece in enumerate(pieces):
-        #piece_rect = pygame.Rect(WIDTH + 10, 10 + i * 60, 50, 50)
-        pygame.draw.rect(screen, WHITE, piece_rect)
+        #piece_rect = pygame.Rect(HEIGHT + 10, 10 + i * 60, 50, 50)
+        #pygame.draw.rect(screen, WHITE, piece_rect)
         piece_image = get_piece_image(chess.Piece.from_symbol(piece))
         if piece_image:
             if i > 5:
@@ -152,6 +164,7 @@ def handle_editing_tab_click(pos,game, editing_position):
         editing_position[0] = False
     elif x >= HEIGHT + 10 and y >= HEIGHT - 70 and x <= HEIGHT + 190 and y <= HEIGHT - 20:
         game.set_fen(get_inverse(game.fen()))
+        set_castling(game)
     half_piece_size = 30
     piece = None
     if x >= HEIGHT + 10 + 25 - half_piece_size and x <= HEIGHT + 10 + 25 + half_piece_size:
@@ -183,7 +196,6 @@ def handle_analysis_tab_click(pos,game, editing_position, flipped_board):
         flipped_board[0] = not flipped_board[0]
         #print("flipped")    
     return False
-
 
 def undid(pos):
     x,y = pos
@@ -218,7 +230,7 @@ def press(selected_square, previous_square, game, editing_position,flipped_board
         #print("press->")
         #print(selected_square)
         move = chess.Move.from_uci(previous_square+selected_square)
-        if (selected_square[-1] == "8" or selected_square[-1] == "1") and (game.piece_at(chess.parse_square(previous_square)).symbol() == "p" or game.piece_at(chess.parse_square(previous_square)).symbol() == "P"):   
+        if (selected_square[-1] == "8" or selected_square[-1] == "1") and ((not game.piece_at(chess.parse_square(previous_square)) is None) and (game.piece_at(chess.parse_square(previous_square)).symbol() == "p" or game.piece_at(chess.parse_square(previous_square)).symbol() == "P")):   
             #move = chess.Move.from_uci(previous_square+selected_square+"q")
             #print("setting promotion")
             promotion[0] = previous_square
@@ -237,6 +249,9 @@ def is_promotion(pos,promotion,flipped_board):
     return promotion[1] == chess.SQUARE_NAMES[selected_square[1] + 8 * (7 - selected_square[0])]
 
 def display_promotion(screen,promotion,game,flipping_board):
+    move1 = chess.Move.from_uci(promotion[0]+promotion[1] + "q")
+    if not move1 in game.legal_moves:
+        return
     #{"tr":"q", "tl":"r","bl":"n","br":"b"}
     ##print("displaying_promotion")
     ##print(promotion[1])
@@ -313,6 +328,7 @@ def main(fen=None):
     game = chess.Board()
     if fen != None:
         game.set_fen(fen)
+    set_castling(game)
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption('Chess GUI')
 
@@ -345,12 +361,15 @@ def main(fen=None):
                     previous_square = selected_square
                     selected_square = get_square_under_mouse(pos)
                     if is_promotion(pos, promotion,flipped_board):
-                        #print("true")
-                        move = chess.Move.from_uci(promotion[0]+promotion[1] + get_promotion_piece(pos,flipped_board))
-                        #print(move)
-                        game.push(move)
-                        selected_square = None
-                        updated = False
+                        
+                        move1 = chess.Move.from_uci(promotion[0]+promotion[1] + "q")
+                        if move1 in game.legal_moves:
+                            #print("true")
+                            move = chess.Move.from_uci(promotion[0]+promotion[1] + get_promotion_piece(pos,flipped_board))
+                            #print(move)
+                            game.push(move)
+                            selected_square = None
+                            updated = False
                     promotion[0] = None
                     promotion[1] = None
 

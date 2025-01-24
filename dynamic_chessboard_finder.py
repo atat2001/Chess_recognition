@@ -33,11 +33,11 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Add the directory containing util.py to the Python path
 sys.path.append(os.path.abspath(os.path.join(current_dir,'detect_board')))
-from verify_board import verify
+from verify_board import verify, get_model, clear_model_from_ram
 # Add the directory containing util.py to the Python path
 sys.path.append(os.path.abspath(os.path.join(current_dir,'tactic_to_fen')))
 
-from tactic_to_fen.tactic_to_fen import tactic_to_fen
+from tactic_to_fen.tactic_to_fen import tactic_to_fen, get_fen_model, clear_fen_model_from_ram
 sys.path.append(os.path.abspath(os.path.join(current_dir,'gui')))
 import gui.gui
 
@@ -110,14 +110,14 @@ def save_to_dir(roi_pil, page, index, path = "woodpecker"):
     
     roi_pil.save(recognized_chessboard_path)
 
-def save_image_if_not_in_not_chessboards(roi_pil):
+def save_image_in_try_chessboards_or_not(model,roi_pil):
     # Convert the image to a hash to check for uniqueness
     img_hash = hashlib.md5(roi_pil.tobytes()).hexdigest()
     not_chessboard_path = os.path.join(not_chessboards_dir, f'{img_hash}.jpg')
     recognized_chessboard_path = os.path.join(recognized_chessboards_dir, f'{img_hash}.jpg')
 
     if not os.path.exists(not_chessboard_path) and not os.path.exists(recognized_chessboard_path):
-        if(verify(roi_pil)):
+        if(verify(model,roi_pil)):
             # Save the image to the "chessboards" directory
             roi_pil.save(recognized_chessboard_path)
             #print(f"Saved recognized chessboard to {recognized_chessboard_path}")
@@ -144,7 +144,10 @@ def capture_screen(region=None):
         return img_bgr
 
 # Function to detect chess diagrams using adaptive thresholding and edge detection
-def detect_chess_diagram(frame, current_index,page = 0, save_as_image = True, show_contours=False):
+def detect_chess_diagram(frame, current_index,page = 0, save_as_image = True, show_contours=False,model_input=None):
+    if model_input is None:
+        model = get_model()
+    model = get_model() ## loads 
     # Convert the frame to grayscale
     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
@@ -183,22 +186,28 @@ def detect_chess_diagram(frame, current_index,page = 0, save_as_image = True, sh
             roi_pil = trim_dark_padding(roi_pil)     
             roi_pil = trim_white_and_gray_padding(roi_pil)
             # Save the recognized chessboard image to the "not chessboards" directory
-            save_image_if_not_in_not_chessboards(roi_pil)
+            save_image_in_try_chessboards_or_not(model,roi_pil)
 
             # Verify if the ROI is a chessboard
-            if verify(roi_pil):
+            if verify(model,roi_pil):
                 save_to_dir(roi_pil,page, current_index + relative_index)
                 relative_index += 1
                 if show_contours:
                     #print("Chessboard detected!")
                     cv2.rectangle(frame_aux, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Yellow rectangle for detected chessboard  
-
+    if not model_input is None:
+        clear_model_from_ram(model)   ## if model was not passed as input, clear it from ram
     if show_contours:
         return frame_aux
+
     return frame
 
 # Function that returns a list of chessboards from a frame
-def get_chessboards(frame, current_index,page = 0, save_as_image = True, show_contours=False):
+def get_chessboards(frame, current_index,page = 0, save_as_image = True, show_contours=False, model_input=None):
+    if model_input is None:
+        model = get_model()
+    else:
+        model = model_input
     # Convert the frame to grayscale
     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
@@ -238,51 +247,76 @@ def get_chessboards(frame, current_index,page = 0, save_as_image = True, show_co
             roi_pil = trim_dark_padding(roi_pil)     
             roi_pil = trim_white_and_gray_padding(roi_pil)
             # Save the recognized chessboard image to the "not chessboards" directory
-            save_image_if_not_in_not_chessboards(roi_pil)
+            save_image_in_try_chessboards_or_not(model,roi_pil)
 
             # Verify if the ROI is a chessboard
-            if verify(roi_pil):
+            if verify(model,roi_pil):
                 outputs += [[roi_pil, frame],]
                 #save_to_dir(roi_pil,page, current_index + relative_index)
                 relative_index += 1
                 if show_contours:
                     #print("Chessboard detected!")
                     cv2.rectangle(frame_aux, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Yellow rectangle for detected chessboard  
+    if not model_input is None:
+        clear_model_from_ram(model)   ## if model was not passed as input, clear it from ram
     return outputs
 
 
 def detect_chess_on_screen_by_key(region=None, delay=0.5, key='p'):
     global current_index
-
-    def on_key_event(key):
+    model = None
+    fen_model = None
+    def on_key_event(key,model, fen_model):
         try:
             if key.char == START_CHAR:
                 # Capture the screen
                 frame = capture_screen(region)
 
                 # Detect chessboard in the frame and show contours
-                chessboards = get_chessboards(frame, current_index)
+                chessboards = get_chessboards(frame, current_index,model_input=model)
+
+                clear_model_from_ram(model)
+                model = None
+                fens_and_frames = []
                 for chessboard_and_frame in chessboards:
-                    fen = tactic_to_fen(chessboard_and_frame[0])
-                    training_gui.main(fen, chessboard_and_frame[0])
+                    fens_and_frames += [[tactic_to_fen(chessboard_and_frame[0],fen_model), chessboard_and_frame[0]]]
+
+                ## app was slow bc of memory, this will avoid the memory usage but might make it a bit slower
+                clear_fen_model_from_ram(fen_model)
+                fen_model = None
+
+                for fen in fens_and_frames:
+                    training_gui.main(fen[0], fen[1])
         except Exception as e:
             print(e)
     while True:
+        if model == None:
+            model = get_model()
+        if fen_model == None:
+            fen_model = get_fen_model()
         try:
             # Start listening to keyboard events
-            with keyboard.Listener(on_press=on_key_event) as listener:
+            with keyboard.Listener(on_press=lambda event: on_key_event(event, model=model,fen_model=fen_model)) as listener:
                 listener.join()
         except:
             pass
-        time.sleep(delay*2)
+        ## or we load the model or we wait, not both
+        if model == None or fen_model == None:
+            if model == None:
+                model = get_model()
+            if fen_model == None:
+                fen_model = get_fen_model()
+        else:
+            time.sleep(delay)
 
 def detect_chess_on_screen(region=None, delay=0.5):
     global current_index
+    model = get_model()  ## loads chess recognizer model
     while True:
         # Capture the screen
         frame = capture_screen(region)
         # Detect chessboard in the frame and show contours
-        processed_frame = detect_chess_diagram(frame, current_index)
+        processed_frame = detect_chess_diagram(frame, current_index,model)
         # Display the frame with contours and any detected diagrams
         cv2.imshow('Chess Diagram Detection with Improved Method', processed_frame)
         # Wait for a short duration between frames
@@ -290,8 +324,9 @@ def detect_chess_on_screen(region=None, delay=0.5):
         # Break the loop when 'q' key is pressed
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
-
+    model = clear_model_from_ram(model)
     cv2.destroyAllWindows()
+
 # Function to convert PDF page to image
 def pdf_page_to_image(pdf_path, page_number):
     document = fitz.open(pdf_path)

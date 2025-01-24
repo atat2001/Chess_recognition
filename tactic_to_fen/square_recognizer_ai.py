@@ -103,6 +103,13 @@ def get_model():
     model.load_state_dict(torch.load(os.path.join(current_dir,'chess_piece_cnn.pth')))
     return model
 
+def clear_model_from_ram(model):
+    del model
+    # if you are lucky enought to be able to use a gpu...  ):
+    # mine is not compatible...
+    if torch.cuda.is_available():   
+        torch.cuda.empty_cache()
+
 def image_prediction_to_fen_representation(image, model):
     transform = transforms.Compose([
         transforms.Resize((64, 64)),
@@ -140,14 +147,13 @@ def train_model_default():
     train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs=20)
 
 
-def fine_tune(data_path):
+def fine_tune(data_path, model):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     transform = transforms.Compose([
         transforms.Resize((64, 64)),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
-    model = get_model()
     # Load the dataset
     dataset = datasets.ImageFolder(root=data_path, transform=transform)
     # Split the dataset into training and validation sets
