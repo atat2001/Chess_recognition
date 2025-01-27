@@ -3,5 +3,7 @@ chessboard_trainer/data/*
 tactic_to_fen/data/*
 tactic_to_fen/data_try/*
 trainer/square_data/*
+detect_board/data/*
+data/*
 __pycache__/*
 **/__pycache__/
