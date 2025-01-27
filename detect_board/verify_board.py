@@ -16,7 +16,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 
 def get_model():
     # Load the trained model
-    model = load_model(os.path.join(current_dir,  'chessboard_detector.h5'), compile=False)
+    model = load_model(os.path.join(current_dir,  'fine_tuned_chessboard_detector.h5'), compile=False)
     model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
     return model
 
