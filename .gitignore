@@ -1,1 +1,6 @@
 tactic_to_fen/chess_piece_cnn.pth
+chessboard_trainer/data/*
+tactic_to_fen/data/*
+tactic_to_fen/data_try/*
+trainer/square_data/*
+__pycache__/*
