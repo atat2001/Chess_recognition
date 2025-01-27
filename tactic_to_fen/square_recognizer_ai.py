@@ -147,7 +147,8 @@ def train_model_default():
     train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs=20)
 
 
-def fine_tune(data_path, model):
+def fine_tune(data_path):
+    model = get_model()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     transform = transforms.Compose([
         transforms.Resize((64, 64)),

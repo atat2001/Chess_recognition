@@ -9,7 +9,7 @@ import sys
 import os
 
 import gui.gui
-
+from training_data_manager import ensure_every_class_has_images, destroy_tmp_files
 # Get the directory of the current file
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -137,7 +137,10 @@ def save_data(game,image):
 def train(game):    
     pygame.quit()
     #sys.exit()
+    ensure_every_class_has_images()
+
     square_recognizer.fine_tune(square_data_folder)
+    destroy_tmp_files()
     gui.gui.main(game.fen())
     pass
 
@@ -180,11 +183,12 @@ def main(fen=None, image=None):
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption('Train GUI')
     editing_position = [None, None]
-    while True:
+    running = True
+    while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
+                running = False
+                break
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 x,y = pygame.mouse.get_pos()
                 if x < HEIGHT:
@@ -194,12 +198,17 @@ def main(fen=None, image=None):
                 elif x > 2*HEIGHT:
                     handle_editing_click((x,y), editing_position,game,image)
                 pass
+        if not pygame.get_init():
+            running = False
+            continue
         screen.fill(WHITE)
         draw_board(screen,game)
         if not image is None:
             draw_image(screen, image)
         draw_editing_tab(screen, editing_position)
         pygame.display.flip()
+    if pygame.get_init():
+        pygame.quit()
 
         
 if __name__ == '__main__':

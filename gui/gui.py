@@ -197,9 +197,11 @@ def handle_analysis_tab_click(pos,game, editing_position, flipped_board):
         #print("flipped")    
     return False
 
-def undid(pos):
+def undid_or_switched_sides(pos):
     x,y = pos
     if x >= HEIGHT + 10 and y >= HEIGHT - 70 and x <= HEIGHT + 190 and y <= HEIGHT - 20:
+        return True
+    if x >= HEIGHT + 10 and y >= HEIGHT - 130 and x <= HEIGHT + 190 and y <= HEIGHT - 80:
         return True
     return False
 
@@ -341,11 +343,13 @@ def main(fen=None):
     updated = False
     promotion = [None,None,None]
     flipped_board = [False]
-    while True:
+    running = True
+    while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
-                sys.exit()
+                running = False
+                break
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 pos = pygame.mouse.get_pos()
                 if in_analysis_tab(pos):
@@ -355,7 +359,7 @@ def main(fen=None):
                     else:
                         if handle_analysis_tab_click(pos,game, editing_position,flipped_board):
                             show_analysis = not show_analysis
-                        if undid(pos):
+                        if undid_or_switched_sides(pos):
                             updated = False
                 else:
                     previous_square = selected_square
@@ -381,6 +385,9 @@ def main(fen=None):
                             updated = False
                         selected_square = None
                 ##print(f"Selected square: {selected_square}")
+        if not pygame.get_init():
+            running = False
+            continue
 
         if not updated and show_analysis:
             if engine is None:

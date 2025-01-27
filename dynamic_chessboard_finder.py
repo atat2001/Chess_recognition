@@ -10,6 +10,8 @@ import fitz  # PyMuPDF
 from pynput import keyboard
 import sys
 
+
+
 """
 Main app: detect_chess_diagram and get_chessboards do edge detection to find any square shapes, identify if they are chessboards or not(using detect_board/verify_board).
             detect_chess_diagram will return the frame(which can highlight square shapes and chessboards) and will save the chessboards/none chessboards found.
@@ -44,6 +46,10 @@ import gui.gui
 # Add the directory containing util.py to the Python path
 sys.path.append(os.path.abspath(os.path.join(current_dir,'trainer')))
 import training_gui
+
+sys.path.append(os.path.abspath(os.path.join(current_dir,'chessboard_trainer')))
+import chessboard_trainer
+
 
 # Directory paths
 recognized_chessboards_dir = 'data/train/chessboard_try'
@@ -110,14 +116,20 @@ def save_to_dir(roi_pil, page, index, path = "woodpecker"):
     
     roi_pil.save(recognized_chessboard_path)
 
-def save_image_in_try_chessboards_or_not(model,roi_pil):
+def save_image_in_try_chessboards_or_not(model,roi_pil,classification=None):
     # Convert the image to a hash to check for uniqueness
     img_hash = hashlib.md5(roi_pil.tobytes()).hexdigest()
     not_chessboard_path = os.path.join(not_chessboards_dir, f'{img_hash}.jpg')
     recognized_chessboard_path = os.path.join(recognized_chessboards_dir, f'{img_hash}.jpg')
 
     if not os.path.exists(not_chessboard_path) and not os.path.exists(recognized_chessboard_path):
-        if(verify(model,roi_pil)):
+        if classification is not None:
+            if classification:
+                roi_pil.save(recognized_chessboard_path)
+            else:
+                roi_pil.save(not_chessboard_path)
+
+        elif(verify(model,roi_pil)):
             # Save the image to the "chessboards" directory
             roi_pil.save(recognized_chessboard_path)
             #print(f"Saved recognized chessboard to {recognized_chessboard_path}")
@@ -143,58 +155,63 @@ def capture_screen(region=None):
         img_bgr = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
         return img_bgr
 
+def get_countour_coordinates_and_frame(frame, show_contours=False):
+    # Load image, grayscale, median blur, sharpen image
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    blur = cv2.medianBlur(gray, 5)
+    sharpen_kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+    sharpen = cv2.filter2D(blur, -1, sharpen_kernel)
+
+    # Threshold and morph close
+    thresh = cv2.threshold(sharpen, 160, 255, cv2.THRESH_BINARY_INV)[1]
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
+    close = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=2)
+
+    # Find contours and filter using threshold area
+    cnts = cv2.findContours(close, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cnts = cnts[0] if len(cnts) == 2 else cnts[1]
+
+    outputs = []
+    min_area = 100
+    if show_contours:
+        frame_aux = frame.copy()
+    for c in cnts:
+        area = cv2.contourArea(c)
+        if area > min_area:
+            x,y,w,h = cv2.boundingRect(c)
+            if show_contours:
+                cv2.rectangle(frame_aux, (x, y), (x + w, y + h), (0,255,0), 2)
+            outputs += [[x,y,w,h],]
+    if show_contours:
+        return [outputs,] + [frame_aux,]
+    return [outputs,] + [frame,]
+
 # Function to detect chess diagrams using adaptive thresholding and edge detection
 def detect_chess_diagram(frame, current_index,page = 0, save_as_image = True, show_contours=False,model_input=None):
     if model_input is None:
         model = get_model()
-    model = get_model() ## loads 
-    # Convert the frame to grayscale
-    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-    # Apply adaptive thresholding to handle uneven lighting
-    thresh = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                                   cv2.THRESH_BINARY_INV, 11, 2)
-
-    # Use Canny edge detection to detect edges
-    edges = cv2.Canny(thresh, 50, 150)
-
-    # Detect contours in the edge-detected image
-    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    # Draw all contours in the frame (for debugging purposes)
-    #cv2.drawContours(frame, contours, -1, (0, 255, 255), 2)  # Draw contours in yellow (0, 255, 255)
+    else:
+        model = model_input
+    contour_coordinates,frame_aux = get_countour_coordinates_and_frame(frame, show_contours)
     relative_index = 0
-    # Loop through the contours and check for square-like shapes (aspect ratio ≈ 1)
-    if show_contours:
-        frame_aux = frame.copy()
-    for contour in contours:
-        x, y, w, h = cv2.boundingRect(contour)
-        aspect_ratio = w / float(h)
+    for x,y,w,h in contour_coordinates:
+        # Extract the region of interest (ROI)
+        roi = frame[y:y + h, x:x + w]  # This slices the image to get the desired rectangle
+        # Convert ROI to PIL image
+        roi_pil = Image.fromarray(cv2.cvtColor(roi, cv2.COLOR_BGR2RGB))      
+        roi_pil = trim_white_and_gray_padding(roi_pil)  
+        roi_pil = trim_dark_padding(roi_pil)     
+        roi_pil = trim_white_and_gray_padding(roi_pil)
+        # Save the recognized chessboard image to the "not chessboards" directory
+        save_image_in_try_chessboards_or_not(model,roi_pil)
 
-
-        # Look for contours that are square-like and large enough to resemble a chessboard
-        if 0.9 <= aspect_ratio <= 1.1 and w > 30 and h > 30:
+        # Verify if the ROI is a chessboard
+        if verify(model,roi_pil):
+            save_to_dir(roi_pil,page, current_index + relative_index)
+            relative_index += 1
             if show_contours:
-                # Draw a rectangle around the detected chessboard
-                cv2.rectangle(frame_aux, (x, y), (x + w, y + h), (0, 0, 255), 2)  # Green rectangle for detected chessboard
-            # Extract the region of interest (ROI)
-            roi = frame[y:y + h, x:x + w]  # This slices the image to get the desired rectangle
-
-            # Convert ROI to PIL image
-            roi_pil = Image.fromarray(cv2.cvtColor(roi, cv2.COLOR_BGR2RGB))      
-            roi_pil = trim_white_and_gray_padding(roi_pil)  
-            roi_pil = trim_dark_padding(roi_pil)     
-            roi_pil = trim_white_and_gray_padding(roi_pil)
-            # Save the recognized chessboard image to the "not chessboards" directory
-            save_image_in_try_chessboards_or_not(model,roi_pil)
-
-            # Verify if the ROI is a chessboard
-            if verify(model,roi_pil):
-                save_to_dir(roi_pil,page, current_index + relative_index)
-                relative_index += 1
-                if show_contours:
-                    #print("Chessboard detected!")
-                    cv2.rectangle(frame_aux, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Yellow rectangle for detected chessboard  
+                #print("Chessboard detected!")
+                cv2.rectangle(frame_aux, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Yellow rectangle for detected chessboard  
     if not model_input is None:
         clear_model_from_ram(model)   ## if model was not passed as input, clear it from ram
     if show_contours:
@@ -208,85 +225,105 @@ def get_chessboards(frame, current_index,page = 0, save_as_image = True, show_co
         model = get_model()
     else:
         model = model_input
-    # Convert the frame to grayscale
-    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-    # Apply adaptive thresholding to handle uneven lighting
-    thresh = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                                   cv2.THRESH_BINARY_INV, 11, 2)
-
-    # Use Canny edge detection to detect edges
-    edges = cv2.Canny(thresh, 50, 150)
-
-    # Detect contours in the edge-detected image
-    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    # Draw all contours in the frame (for debugging purposes)
-    #cv2.drawContours(frame, contours, -1, (0, 255, 255), 2)  # Draw contours in yellow (0, 255, 255)
+    ## trying new contours
+    contour_coordinates,frame_aux = get_countour_coordinates_and_frame(frame, show_contours)
     relative_index = 0
-    # Loop through the contours and check for square-like shapes (aspect ratio ≈ 1)
     outputs = []
-    if show_contours:
-        frame_aux = frame.copy()
-    for contour in contours:
-        x, y, w, h = cv2.boundingRect(contour)
-        aspect_ratio = w / float(h)
+    for x,y,w,h in contour_coordinates:
+        # Extract the region of interest (ROI)
+        roi = frame[y:y + h, x:x + w]  # This slices the image to get the desired rectangle
+        # Convert ROI to PIL image
+        roi_pil = Image.fromarray(cv2.cvtColor(roi, cv2.COLOR_BGR2RGB))      
+        roi_pil = trim_white_and_gray_padding(roi_pil)  
+        roi_pil = trim_dark_padding(roi_pil)     
+        roi_pil = trim_white_and_gray_padding(roi_pil)
+        # Save the recognized chessboard image to the "not chessboards" directory
+        save_image_in_try_chessboards_or_not(model,roi_pil)
 
-
-        # Look for contours that are square-like and large enough to resemble a chessboard
-        if 0.9 <= aspect_ratio <= 1.1 and w > 30 and h > 30:
+        # Verify if the ROI is a chessboard
+        if verify(model,roi_pil):
+            outputs += [roi_pil,]
+            #save_to_dir(roi_pil,page, current_index + relative_index)
+            relative_index += 1
             if show_contours:
-                # Draw a rectangle around the detected chessboard
-                cv2.rectangle(frame_aux, (x, y), (x + w, y + h), (0, 0, 255), 2)  # Green rectangle for detected chessboard
-            # Extract the region of interest (ROI)
-            roi = frame[y:y + h, x:x + w]  # This slices the image to get the desired rectangle
-
-            # Convert ROI to PIL image
-            roi_pil = Image.fromarray(cv2.cvtColor(roi, cv2.COLOR_BGR2RGB))      
-            roi_pil = trim_white_and_gray_padding(roi_pil)  
-            roi_pil = trim_dark_padding(roi_pil)     
-            roi_pil = trim_white_and_gray_padding(roi_pil)
-            # Save the recognized chessboard image to the "not chessboards" directory
-            save_image_in_try_chessboards_or_not(model,roi_pil)
-
-            # Verify if the ROI is a chessboard
-            if verify(model,roi_pil):
-                outputs += [[roi_pil, frame],]
-                #save_to_dir(roi_pil,page, current_index + relative_index)
-                relative_index += 1
-                if show_contours:
-                    #print("Chessboard detected!")
-                    cv2.rectangle(frame_aux, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Yellow rectangle for detected chessboard  
+                #print("Chessboard detected!")
+                cv2.rectangle(frame_aux, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Yellow rectangle for detected chessboard  
     if not model_input is None:
         clear_model_from_ram(model)   ## if model was not passed as input, clear it from ram
     return outputs
 
+def get_contour_images_and_classification(frame, model_input=None):
+    show_contours = False
+    if model_input is None:
+        model = get_model()
+    else:
+        model = model_input
+    contour_coordinates,frame_aux = get_countour_coordinates_and_frame(frame, show_contours)
+    relative_index = 0
+    roi_pils = []
+    classifications = []
+    for x,y,w,h in contour_coordinates:
+        # Extract the region of interest (ROI)
+        roi = frame[y:y + h, x:x + w]  # This slices the image to get the desired rectangle
+        # Convert ROI to PIL image
+        roi_pil = Image.fromarray(cv2.cvtColor(roi, cv2.COLOR_BGR2RGB))      
+        roi_pil = trim_white_and_gray_padding(roi_pil)  
+        roi_pil = trim_dark_padding(roi_pil)     
+        roi_pil = trim_white_and_gray_padding(roi_pil)
 
-def detect_chess_on_screen_by_key(region=None, delay=0.5, key='p'):
+        roi_pils += [roi_pil,]
+        # Verify if the ROI is a chessboard
+        if verify(model,roi_pil):
+            classifications += [True,]
+        else:
+            classifications += [False,]
+    if not model_input is None:
+        clear_model_from_ram(model)   ## if model was not passed as input, clear it from ram
+    return [roi_pils,] + [classifications,]
+
+def detect_chess_on_screen_by_key(region=None, delay=0.5, key='p',train_board = True):
     global current_index
     model = None
     fen_model = None
     def on_key_event(key,model, fen_model):
         try:
             if key.char == START_CHAR:
+                chessboards = []
                 # Capture the screen
                 frame = capture_screen(region)
-
-                # Detect chessboard in the frame and show contours
-                chessboards = get_chessboards(frame, current_index,model_input=model)
-
-                clear_model_from_ram(model)
+                if train_board:
+                    true_classifications = []
+                    chessboards = []
+                    countours, classification = get_contour_images_and_classification(frame, model_input=model)
+                    clear_model_from_ram(model)
+                    i = 0
+                    while len(classification)-i > 6:
+                        true_classifications += chessboard_trainer.training_gui(countours[i:i+6],classification[i:i+6])
+                        i += 6
+                    true_classifications += chessboard_trainer.training_gui(countours[i:-1],classification[i:-1])
+                    for index in range(len(true_classifications)):
+                        if true_classifications[index]:
+                            save_image_in_try_chessboards_or_not(None,countours[index],True)
+                            chessboards += [countours[index],]
+                        else:
+                            save_image_in_try_chessboards_or_not(None,countours[index],False)
+                else:
+                    # Detect chessboard in the frame and show contours
+                    chessboards = get_chessboards(frame, current_index,model_input=model)
+                    clear_model_from_ram(model)
                 model = None
                 fens_and_frames = []
-                for chessboard_and_frame in chessboards:
-                    fens_and_frames += [[tactic_to_fen(chessboard_and_frame[0],fen_model), chessboard_and_frame[0]]]
+                for chessboard in chessboards:
+                    fens_and_frames += [[tactic_to_fen(chessboard,fen_model), chessboard]]
 
                 ## app was slow bc of memory, this will avoid the memory usage but might make it a bit slower
                 clear_fen_model_from_ram(fen_model)
                 fen_model = None
-
+                print(len(fens_and_frames))
                 for fen in fens_and_frames:
+                    print(fen[0])
                     training_gui.main(fen[0], fen[1])
+                    print("gui closed")
         except Exception as e:
             print(e)
     while True:

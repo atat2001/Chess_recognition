@@ -14,50 +14,78 @@ import tensorflow as tf
 from tensorflow.keras import layers, models
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 import os
+from verify_board import get_model, clear_model_from_ram, preprocess_image
 
-# Set up image data generator
-datagen = ImageDataGenerator(rescale=1./255)
+def fine_tune_model():
+    model = get_model()
+    # Set up image data generator
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    data_dir = os.path.join(current_dir, '..', 'data')
+    datagen = ImageDataGenerator(rescale=1./255)
+    
+    generator = datagen.flow_from_directory(
+        data_dir,  # Point to the parent directory
+        target_size=(150, 150),
+        batch_size=32,
+        class_mode='binary',  # Set class mode for binary classification
+    )
+    
+    # Fine-tune the model
+    model.fit(generator, epochs=10)
+    
+    # Save the fine-tuned model
+    model.save(os.path.join(current_dir, 'fine_tuned_chessboard_detector.h5'))
+    
+    # Clear the model from memory
+    clear_model_from_ram(model)
 
-generator = datagen.flow_from_directory(
-    'data/train',  # Point to the parent directory
-    target_size=(150, 150),
-    batch_size=32,
-    class_mode='binary',  # Set class mode for binary classification
-)
 
-# Print class indices
-print("Class indices:", generator.class_indices)
+def train_model_from_scratch():
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    data_dir =  os.path.join(os.path.join(current_dir, '..'), 'data')
+    # Set up image data generator
+    datagen = ImageDataGenerator(rescale=1./255)
 
-# Build a CNN model
-model = models.Sequential([
-    layers.Conv2D(32, (3, 3), activation='relu', input_shape=(150, 150, 3)),
-    layers.MaxPooling2D(pool_size=(2, 2)),
-    layers.Conv2D(64, (3, 3), activation='relu'),
-    layers.MaxPooling2D(pool_size=(2, 2)),
-    layers.Conv2D(128, (3, 3), activation='relu'),
-    layers.MaxPooling2D(pool_size=(2, 2)),
-    layers.Flatten(),
-    layers.Dense(128, activation='relu'),
-    layers.Dense(1, activation='sigmoid')  # Output layer for binary classification
-])
+    generator = datagen.flow_from_directory(
+        data_dir,  # Point to the parent directory
+        target_size=(150, 150),
+        batch_size=32,
+        class_mode='binary',  # Set class mode for binary classification
+    )
 
-# Compile the model
-model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    # Print class indices
+    print("Class indices:", generator.class_indices)
 
-# Train the model
-model.fit(generator, epochs=25)
+    # Build a CNN model
+    model = models.Sequential([
+        layers.Conv2D(32, (3, 3), activation='relu', input_shape=(150, 150, 3)),
+        layers.MaxPooling2D(pool_size=(2, 2)),
+        layers.Conv2D(64, (3, 3), activation='relu'),
+        layers.MaxPooling2D(pool_size=(2, 2)),
+        layers.Conv2D(128, (3, 3), activation='relu'),
+        layers.MaxPooling2D(pool_size=(2, 2)),
+        layers.Flatten(),
+        layers.Dense(128, activation='relu'),
+        layers.Dense(1, activation='sigmoid')  # Output layer for binary classification
+    ])
 
-# Evaluate the model on the training data
-train_loss, train_accuracy = model.evaluate(generator)
-print(f"Training Loss: {train_loss}, Training Accuracy: {train_accuracy}")
+    # Compile the model
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
-# Save the model for later use
-model.save('chessboard_detector.h5')
+    # Train the model
+    model.fit(generator, epochs=25)
 
-# Check image paths and labels
-for i in range(len(generator)):
-    img, label = generator[i]  # Get the image and label
-    prediction = model.predict(img)  # Get the prediction
-    # Get the class label from the class indices
-    class_label = list(generator.class_indices.keys())[list(generator.class_indices.values()).index(int(label[0]))]
-    print(f"Image {i+1}: True Label = {label[0]} ({class_label}), Predicted Probability = {prediction[0][0]}")
+    # Evaluate the model on the training data
+    train_loss, train_accuracy = model.evaluate(generator)
+    print(f"Training Loss: {train_loss}, Training Accuracy: {train_accuracy}")
+
+    # Save the model for later use
+    model.save('chessboard_detector_2.h5')
+
+    # Check image paths and labels
+    for i in range(len(generator)):
+        img, label = generator[i]  # Get the image and label
+        prediction = model.predict(img)  # Get the prediction
+        # Get the class label from the class indices
+        class_label = list(generator.class_indices.keys())[list(generator.class_indices.values()).index(int(label[0]))]
+        print(f"Image {i+1}: True Label = {label[0]} ({class_label}), Predicted Probability = {prediction[0][0]}")
