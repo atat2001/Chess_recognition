@@ -34,7 +34,7 @@ def fine_tune_model():
     model.fit(generator, epochs=10)
     
     # Save the fine-tuned model
-    model.save(os.path.join(current_dir, 'fine_tuned_chessboard_detector.h5'))
+    model.save(os.path.join(current_dir, 'chessboard_detector.h5'))
     
     # Clear the model from memory
     clear_model_from_ram(model)
